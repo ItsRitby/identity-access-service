@@ -17,6 +17,8 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "couchbase": "^4.7.1",
+    "dotenv": "^18.0.7",
     "express": "^5.3.0"
   }
 }

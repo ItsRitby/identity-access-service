@@ -1,0 +1,19 @@
+services:
+  couchbase:
+    image: couchbase:community-7.2.4
+    container_name: identity-access-couchbase
+    ports:
+      - "8091:8091"   # Couchbase Web Console
+      - "8092:8092"   # Query service (N1QL)
+      - "8093:8093"   # Query service (N1QL endpoint)
+      - "8094:8094"   # Search service
+      - "11210:11210" # Data service (SDK clients)
+    volumes:
+      - couchbase-data:/opt/couchbase/var
+    environment:
+      - COUCHBASE_ADMINISTRATOR_USERNAME=Administrator
+      - COUCHBASE_ADMINISTRATOR_PASSWORD=changeme123
+    restart: unless-stopped
+
+volumes:
+  couchbase-data:
