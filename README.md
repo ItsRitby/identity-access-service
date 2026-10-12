@@ -1,4 +1,3 @@
-[README.md](https://github.com/user-attachments/files/33359962/README.md)
 # identity-access-service
 
 Identity and Access microservice for the **muCARD** platform — a multiplayer card games system.
