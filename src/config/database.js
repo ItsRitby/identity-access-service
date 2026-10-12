@@ -3,6 +3,7 @@ import couchbase from 'couchbase';
 const { Cluster } = couchbase;
 
 let usersCollection = null;
+let identityScope = null;
 
 export async function connectToCouchbase() {
   const connectionString = process.env.COUCHBASE_CONNECTION_STRING;
@@ -20,14 +21,14 @@ export async function connectToCouchbase() {
   const bucket = cluster.bucket(bucketName);
   await bucket.waitUntilReady(10000);
 
-  const scope = bucket.scope(scopeName);
-  usersCollection = scope.collection(collectionName);
+  identityScope = bucket.scope(scopeName);
+  usersCollection = identityScope.collection(collectionName);
 
   console.log(
     `Couchbase connected -> bucket '${bucketName}', scope '${scopeName}', collection '${collectionName}'`
   );
 
-  return { cluster, bucket, usersCollection };
+  return { cluster, bucket, scope: identityScope, usersCollection };
 }
 
 export function getUsersCollection() {
@@ -37,4 +38,13 @@ export function getUsersCollection() {
     );
   }
   return usersCollection;
+}
+
+export function getIdentityScope() {
+  if (!identityScope) {
+    throw new Error(
+      'Couchbase not initialized. Call connectToCouchbase() before using getIdentityScope().'
+    );
+  }
+  return identityScope;
 }

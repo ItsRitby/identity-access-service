@@ -1,11 +1,13 @@
 import 'dotenv/config';
 import app from './app.js';
 import { connectToCouchbase } from './config/database.js';
+import { ensureIndexes } from './config/indexes.js';
 
 const PORT = process.env.PORT || 3001;
 
 async function start() {
   await connectToCouchbase();
+  await ensureIndexes();
 
   app.listen(PORT, () => {
     console.log(`identity-access-service listening on port ${PORT}`);
