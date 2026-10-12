@@ -3,16 +3,56 @@ services:
     image: couchbase:community-7.2.4
     container_name: identity-access-couchbase
     ports:
-      - "8091:8091"   # Couchbase Web Console
-      - "8092:8092"   # Query service (N1QL)
-      - "8093:8093"   # Query service (N1QL endpoint)
-      - "8094:8094"   # Search service
-      - "11210:11210" # Data service (SDK clients)
+      - "8091:8091"
+      - "8092:8092"
+      - "8093:8093"
+      - "8094:8094"
+      - "11210:11210"
     volumes:
       - couchbase-data:/opt/couchbase/var
     environment:
       - COUCHBASE_ADMINISTRATOR_USERNAME=Administrator
       - COUCHBASE_ADMINISTRATOR_PASSWORD=changeme123
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8091/pools || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    restart: unless-stopped
+
+  couchbase-init:
+    image: couchbase:community-7.2.4
+    container_name: identity-access-couchbase-init
+    depends_on:
+      couchbase:
+        condition: service_healthy
+    volumes:
+      - ./init-couchbase.sh:/init-couchbase.sh:ro
+    entrypoint: ["/bin/bash", "/init-couchbase.sh"]
+    restart: "no"
+
+  identity-access-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: identity-access-service
+    depends_on:
+      couchbase-init:
+        condition: service_completed_successfully
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - NODE_ENV=production
+      - COUCHBASE_CONNECTION_STRING=couchbase://couchbase
+      - COUCHBASE_USERNAME=Administrator
+      - COUCHBASE_PASSWORD=changeme123
+      - COUCHBASE_BUCKET=identity_access
+      - COUCHBASE_SCOPE=identity
+      - COUCHBASE_COLLECTION=users
+      - JWT_SECRET=change_this_secret_in_production_a1b2c3d4e5f6
+      - JWT_EXPIRES_IN=15m
     restart: unless-stopped
 
 volumes:
