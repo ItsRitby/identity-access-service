@@ -1,5 +1,7 @@
 import express from 'express';
+import swaggerUi from 'swagger-ui-express';
 import { getUsersCollection } from './config/database.js';
+import { swaggerSpec } from './config/swagger.js';
 import userRoutes from './routes/userRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import { notFoundHandler, errorHandler } from './middlewares/errorHandler.js';
@@ -24,6 +26,12 @@ app.get('/health/db', async (req, res) => {
   } catch (error) {
     res.status(503).json({ database: 'DOWN', error: error.message });
   }
+});
+
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.get('/api-docs.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
 });
 
 app.use('/api/v1/users', userRoutes);
