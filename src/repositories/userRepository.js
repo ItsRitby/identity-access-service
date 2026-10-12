@@ -1,5 +1,8 @@
+import couchbase from 'couchbase';
 import { getUsersCollection, getIdentityScope } from '../config/database.js';
 import { buildUserKey } from '../models/userModel.js';
+
+const { QueryScanConsistency } = couchbase;
 
 export async function insertUser(userDocument) {
   const collection = getUsersCollection();
@@ -34,6 +37,7 @@ export async function findByUsername(username) {
   const statement = 'SELECT u.* FROM users AS u WHERE u.username = $1 LIMIT 1';
   const result = await scope.query(statement, {
     parameters: [username],
+    scanConsistency: QueryScanConsistency.RequestPlus,
   });
   return result.rows.length > 0 ? result.rows[0] : null;
 }
@@ -43,6 +47,7 @@ export async function findByNickname(nickname) {
   const statement = 'SELECT u.* FROM users AS u WHERE u.nickname = $1 LIMIT 1';
   const result = await scope.query(statement, {
     parameters: [nickname],
+    scanConsistency: QueryScanConsistency.RequestPlus,
   });
   return result.rows.length > 0 ? result.rows[0] : null;
 }
