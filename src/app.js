@@ -1,5 +1,8 @@
 import express from 'express';
 import { getUsersCollection } from './config/database.js';
+import userRoutes from './routes/userRoutes.js';
+import authRoutes from './routes/authRoutes.js';
+import { notFoundHandler, errorHandler } from './middlewares/errorHandler.js';
 
 const app = express();
 
@@ -22,5 +25,11 @@ app.get('/health/db', async (req, res) => {
     res.status(503).json({ database: 'DOWN', error: error.message });
   }
 });
+
+app.use('/api/v1/users', userRoutes);
+app.use('/api/v1/auth', authRoutes);
+
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 export default app;
