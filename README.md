@@ -152,7 +152,7 @@ Node.js is **not required**. Everything runs inside Docker containers.
 ### Step 1 - Clone the repository
 
 ```bash
-git clone https://github.com/<your-username>/identity-access-service.git
+git clone https://github.com/ItsRitby/identity-access-service.git
 cd identity-access-service
 ```
 
