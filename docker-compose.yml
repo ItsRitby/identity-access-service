@@ -51,8 +51,13 @@ services:
       - COUCHBASE_BUCKET=identity_access
       - COUCHBASE_SCOPE=identity
       - COUCHBASE_COLLECTION=users
-      - JWT_SECRET=change_this_secret_in_production_a1b2c3d4e5f6
+      - JWT_SECRET=JWT_SECRET=dedica_tu_corazon_by_levi_akerman
       - JWT_EXPIRES_IN=15m
+      - EUREKA_ENABLED=true
+      - EUREKA_HOST=eureka-server
+      - EUREKA_PORT=8761
+      - EUREKA_APP_NAME=identity-access-service
+      - EUREKA_INSTANCE_HOST=identity-access-service
     restart: unless-stopped
 
 volumes:
