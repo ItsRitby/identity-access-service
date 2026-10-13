@@ -1,0 +1,14 @@
+# Force LF for shell scripts (they run inside Linux containers)
+*.sh text eol=lf
+
+# Default: let Git detect text files and normalize to LF in the repo
+* text=auto eol=lf
+
+# Binary files should never be converted
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
