@@ -19,6 +19,8 @@ services:
       timeout: 10s
       retries: 10
       start_period: 120s
+    networks:
+      - mucard-network
     restart: unless-stopped
 
   couchbase-init:
@@ -30,6 +32,8 @@ services:
     volumes:
       - ./init-couchbase.sh:/init-couchbase.sh:ro
     entrypoint: ["/bin/bash", "/init-couchbase.sh"]
+    networks:
+      - mucard-network
     restart: "no"
 
   identity-access-service:
@@ -51,14 +55,21 @@ services:
       - COUCHBASE_BUCKET=identity_access
       - COUCHBASE_SCOPE=identity
       - COUCHBASE_COLLECTION=users
-      - JWT_SECRET=JWT_SECRET=dedica_tu_corazon_by_levi_akerman
+      - JWT_SECRET=dedica_tu_corazon_by_levi_akerman
       - JWT_EXPIRES_IN=15m
       - EUREKA_ENABLED=true
       - EUREKA_HOST=eureka-server
       - EUREKA_PORT=8761
       - EUREKA_APP_NAME=identity-access-service
       - EUREKA_INSTANCE_HOST=identity-access-service
+    networks:
+      - mucard-network
     restart: unless-stopped
 
 volumes:
   couchbase-data:
+
+networks:
+  mucard-network:
+    external: true
+    name: mucard-network

@@ -69,17 +69,24 @@ The microservice registers itself with Eureka at startup (if `EUREKA_ENABLED=tru
 
 **Registration is non-blocking:** if Eureka is unreachable, the microservice logs a warning and keeps serving requests normally.
 
+### Shared Docker network
+
+All services that participate in the muCARD ecosystem (this microservice, Eureka Server, API Gateway, other microservices) communicate through a **shared external Docker network** called `mucard-network`.
+
+- Each `docker-compose.yml` declares the network as `external: true`.
+- The network must be created **once** before running any compose: `docker network create mucard-network`.
+- The network name is fixed across all projects to avoid duplication.
+
 ---
 
 ## Project Structure
 
 ```
 identity-access-service/
-|-- docker-compose.yml          # Couchbase + init service + microservice
+|-- docker-compose.yml          # Couchbase + init service + microservice + shared network
 |-- Dockerfile                  # Multi-stage Node.js build
 |-- init-couchbase.sh           # Automated cluster/bucket/scope/collection setup
 |-- package.json
-|-- .env.example                # Environment variable template
 |-- .gitignore
 |-- .dockerignore
 |-- docs/
@@ -137,28 +144,68 @@ identity-access-service/
 ### Prerequisites
 
 - **Docker Desktop** (running)
-- **Node.js 20+** only if you want to run outside Docker
+- **Git** (to clone the repository)
 - **Postman** (optional, for API testing)
-- **Eureka Server** (optional, for service registration)
 
-### 1. Clone the repository
+Node.js is **not required**. Everything runs inside Docker containers.
+
+### Step 1 - Clone the repository
 
 ```bash
 git clone https://github.com/<your-username>/identity-access-service.git
 cd identity-access-service
 ```
 
-### 2. Set up environment variables
+### Step 2 - Adjust environment variables in `docker-compose.yml`
 
-Copy the template:
+All runtime configuration lives in `docker-compose.yml` under the `identity-access-service` service's `environment:` block. Open the file and review the following values:
 
-```bash
-cp .env.example .env
+```yaml
+  identity-access-service:
+    environment:
+      - PORT=3001
+      - NODE_ENV=production
+      - COUCHBASE_CONNECTION_STRING=couchbase://couchbase
+      - COUCHBASE_USERNAME=Administrator
+      - COUCHBASE_PASSWORD=changeme123
+      - COUCHBASE_BUCKET=identity_access
+      - COUCHBASE_SCOPE=identity
+      - COUCHBASE_COLLECTION=users
+      - JWT_SECRET=dedica_tu_corazon_by_levi_akerman
+      - JWT_EXPIRES_IN=15m
+      - EUREKA_ENABLED=true
+      - EUREKA_HOST=eureka-server
+      - EUREKA_PORT=8761
+      - EUREKA_APP_NAME=identity-access-service
+      - EUREKA_INSTANCE_HOST=identity-access-service
 ```
 
-Edit `.env` and adjust the values. **Never commit `.env`.**
+| Variable | What to check |
+|----------|---------------|
+| `JWT_SECRET` | Replace with a long random string unique to your environment. Minimum 16 characters. |
+| `COUCHBASE_PASSWORD` | Change if you changed the default Couchbase password. |
+| `EUREKA_ENABLED` | Set to `false` if you want to run without a Eureka Server. |
+| `EUREKA_HOST` | Must match the container name of your Eureka Server (default: `eureka-server`). |
 
-### 3. Start everything with Docker Compose
+**Do not commit changes to secrets.** If you must version them, commit placeholders instead.
+
+### Step 3 - Create the shared Docker network (only once per machine)
+
+This network is shared by all services in the muCARD ecosystem. The command only needs to be run once; subsequent `docker network create` calls will fail harmlessly.
+
+```bash
+docker network create mucard-network
+```
+
+Verify:
+
+```bash
+docker network ls
+```
+
+You should see `mucard-network` in the list.
+
+### Step 4 - Start the stack
 
 ```bash
 docker compose up -d --build
@@ -171,12 +218,27 @@ This single command:
 3. Runs `couchbase-init` (idempotent cluster + bucket + scope + collection setup).
 4. Starts the microservice once Couchbase is healthy.
 
-**First startup takes 90-120 seconds** because Couchbase initializes from scratch. Subsequent startups take 20-40 s.
+**First startup takes 90-120 seconds** because Couchbase initializes from scratch. Subsequent startups take 20-40 seconds.
 
-### 4. Verify
+### Step 5 - Verify
 
 ```bash
 docker ps
+```
+
+Expected containers:
+
+| Container | State |
+|-----------|-------|
+| `identity-access-couchbase` | `Up (healthy)` |
+| `identity-access-couchbase-init` | `Exited (0)` |
+| `identity-access-service` | `Up` |
+
+The `init` container is ephemeral: it runs once and exits with code 0. This is expected, not an error.
+
+Check the microservice logs:
+
+```bash
 docker logs identity-access-service
 ```
 
@@ -187,10 +249,13 @@ Couchbase connected -> bucket 'identity_access', scope 'identity', collection 'u
 Index ensured: CREATE INDEX idx_users_username ...
 Index ensured: CREATE INDEX idx_users_nickname ...
 identity-access-service listening on port 3001
-Registered in Eureka as identity-access-service
 ```
 
-The last line only appears when `EUREKA_ENABLED=true` and an Eureka Server is reachable.
+The following line only appears when a Eureka Server is reachable in the shared network:
+
+```
+Registered in Eureka as identity-access-service
+```
 
 Test the service:
 
@@ -199,39 +264,112 @@ curl http://localhost:3001/health
 curl http://localhost:3001/health/db
 ```
 
-### 5. Stop the stack
+Expected responses:
+
+```json
+{"status":"UP","service":"identity-access-service","timestamp":"..."}
+{"database":"UP"}
+```
+
+### Step 6 - Test the API
+
+**Option A - Swagger UI (browser):**
+
+```
+http://localhost:3001/api-docs
+```
+
+The UI lets you execute every endpoint without additional tools. Use the **Authorize** button to paste a JWT for protected endpoints.
+
+**Option B - Postman:**
+
+1. Import `postman/identity-access-service.postman_collection.json`.
+2. Import `postman/muCARD-Identity-Local.postman_environment.json`.
+3. Select the environment in Postman.
+4. Run requests in order:
+
+   1. **Register User** - saves `recoveryCode` automatically.
+   2. **Register duplicate** - expects `409`.
+   3. **Login** - saves `token` automatically.
+   4. **Get Current User**
+   5. **Change Nickname**
+   6. **Recover Password** - uses and refreshes `recoveryCode`.
+   7. **Login with new password** - refreshes `token`.
+   8. **Logout**
+
+### Step 7 - Verify Eureka registration (optional)
+
+Open the Eureka console:
+
+```
+http://localhost:8761
+```
+
+Under **"Instances currently registered with Eureka"**, you should see:
+
+```
+IDENTITY-ACCESS-SERVICE    n/a (1)    (1)    UP (1) - identity-access-service:identity-access-service:3001
+```
+
+If the Eureka Server is not running, the microservice still works. It just logs a warning and skips registration.
+
+### Step 8 - Uninstall / stop everything
+
+**Stop the containers (keep data):**
 
 ```bash
 docker compose down
 ```
 
-Add `-v` to also wipe the Couchbase volume (all data):
+**Stop the containers and delete the Couchbase volume (all data is lost):**
 
 ```bash
 docker compose down -v
 ```
 
+**Delete the shared network (only if no other service is using it):**
+
+```bash
+docker network rm mucard-network
+```
+
+**Delete the images (optional, frees disk space):**
+
+```bash
+docker rmi identity-access-service-identity-access-service couchbase:community-7.2.4
+```
+
+**Full cleanup of unused Docker resources:**
+
+```bash
+docker system prune -a
+```
+
+**Warning:** `docker system prune -a` removes all stopped containers, unused networks, and unused images across the whole system, not just this project. Use with care.
+
 ---
 
 ## Environment Variables
 
+All variables are defined directly in `docker-compose.yml`. There is no `.env` file, and `dotenv` is not used at runtime.
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `3001` | Express server port |
-| `NODE_ENV` | `development` | Runtime environment |
-| `COUCHBASE_CONNECTION_STRING` | `couchbase://localhost` | Use `couchbase://couchbase` inside Docker |
+| `NODE_ENV` | `production` | Runtime environment |
+| `COUCHBASE_CONNECTION_STRING` | `couchbase://couchbase` | Couchbase connection string (uses the container name in Docker) |
 | `COUCHBASE_USERNAME` | `Administrator` | Couchbase admin user |
 | `COUCHBASE_PASSWORD` | `changeme123` | Couchbase admin password |
 | `COUCHBASE_BUCKET` | `identity_access` | Bucket name |
 | `COUCHBASE_SCOPE` | `identity` | Scope name |
 | `COUCHBASE_COLLECTION` | `users` | Collection name |
-| `JWT_SECRET` | - | **Must be >= 16 chars.** Generate with `openssl rand -hex 32` |
+| `JWT_SECRET` | - | **Must be >= 16 chars.** Change in production. |
 | `JWT_EXPIRES_IN` | `15m` | Token lifetime (e.g. `15m`, `1h`, `7d`) |
 | `EUREKA_ENABLED` | `true` | Toggle Eureka registration (`true` / `false`) |
-| `EUREKA_HOST` | `localhost` | Eureka Server host. Use `eureka-server` inside Docker |
+| `EUREKA_HOST` | `eureka-server` | Eureka Server host (container name on the shared network) |
 | `EUREKA_PORT` | `8761` | Eureka Server port |
 | `EUREKA_APP_NAME` | `identity-access-service` | Name used to register in Eureka |
-| `EUREKA_INSTANCE_HOST` | `localhost` | Host advertised to Eureka for this instance |
+| `EUREKA_INSTANCE_HOST` | `identity-access-service` | Host advertised to Eureka for this instance |
 
 ---
 
@@ -321,24 +459,6 @@ A snapshot is also committed at `docs/openapi.json`.
 
 ---
 
-## Testing with Postman
-
-1. Import the collection: `postman/identity-access-service.postman_collection.json`.
-2. Import the environment: `postman/muCARD-Identity-Local.postman_environment.json`.
-3. Select the environment in Postman.
-4. Run requests in order:
-
-   1. **Register User** - saves `recoveryCode` automatically.
-   2. **Register duplicate** - expects `409`.
-   3. **Login** - saves `token` automatically.
-   4. **Get Current User**
-   5. **Change Nickname**
-   6. **Recover Password** - uses and refreshes `recoveryCode`.
-   7. **Login with new password** - refreshes `token`.
-   8. **Logout**
-
----
-
 ## Eureka Integration
 
 The microservice registers itself with a Spring Eureka Server using the `eureka-js-client` library.
@@ -350,13 +470,23 @@ The microservice registers itself with a Spring Eureka Server using the `eureka-
 3. It sends a heartbeat every 30 seconds to keep the registration alive.
 4. On `SIGINT` / `SIGTERM`, the client sends a deregistration request so the Gateway stops routing to it immediately.
 
+### Shared network requirement
+
+For registration to work, the Eureka Server must be running on the same Docker network (`mucard-network`). The container name of the Eureka Server must match `EUREKA_HOST` in `docker-compose.yml` (default: `eureka-server`).
+
 ### Graceful degradation
 
 If Eureka is unreachable at startup, the client logs a warning and the microservice continues operating. This is intentional: **service registration must not become a single point of failure for the microservice**.
 
-### Disabling Eureka in development
+### Disabling Eureka
 
-Set `EUREKA_ENABLED=false` in `.env` or as an environment variable. Useful when developing without a running Eureka Server.
+Set `EUREKA_ENABLED=false` in the `environment:` block of `docker-compose.yml` and restart the service:
+
+```bash
+docker compose up -d --force-recreate identity-access-service
+```
+
+Useful when running the microservice in isolation, without the rest of the ecosystem.
 
 ### Verifying registration
 
@@ -370,6 +500,8 @@ IDENTITY-ACCESS-SERVICE    n/a (1)    (1)    UP (1) - identity-access-service:id
 
 ## Design Decisions
 
+- **All configuration in `docker-compose.yml`.** No `.env` file, no `dotenv`. The container receives its environment from the compose definition, which is versioned and shared.
+- **Shared external Docker network.** All services of the muCARD ecosystem join the same network (`mucard-network`) to allow DNS resolution by container name.
 - **DTOs everywhere.** Controllers never touch raw documents. Requests are validated by request DTOs; responses are shaped by response DTOs. `passwordHash` and `recoveryCode` never leak (except at registration and recovery, where the code is intentionally shown once).
 - **UUID v4 for user ids.** No sequential ids; no coordination needed; safe for distributed systems.
 - **Couchbase key = `user::<uuid>`.** Prefix allows filtering by type and readability.
@@ -397,7 +529,9 @@ This microservice is part of the **muCARD** platform. It is designed to:
 - Register itself with a **Spring Eureka** server (see the `Eureka Integration` section above).
 - Be consumed through a **Spring Cloud Gateway** that routes `/identity/**` to it by application name `identity-access-service`.
 
-The Gateway is a separate Java project. CORS, rate limiting, and unified authentication enforcement are the Gateway's responsibility, not this microservice's.
+Both the Eureka Server and the API Gateway are separate Java projects. They must join the same shared Docker network (`mucard-network`) for service discovery to work.
+
+CORS, rate limiting, and unified authentication enforcement are the Gateway's responsibility, not this microservice's.
 
 ---
 
